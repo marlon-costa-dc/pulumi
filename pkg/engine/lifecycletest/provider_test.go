@@ -320,7 +320,7 @@ func TestSingleResourceExplicitProviderReplace(t *testing.T) {
 	}
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource(providers.MakeProviderType("pkgA"), "provA", true,
-			deploytest.ResourceOptions{Inputs: providerInputs})
+			deploytest.ResourceOptions{Inputs: resource.FromResourcePropertyMap(providerInputs)})
 		require.NoError(t, err)
 
 		provRef, err := providers.NewReference(resp.URN, resp.ID)
@@ -461,7 +461,7 @@ func TestSingleResourceExplicitProviderAliasUpdateDelete(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource(providers.MakeProviderType("pkgA"), providerName, true,
 			deploytest.ResourceOptions{
-				Inputs:    providerInputs,
+				Inputs:    resource.FromResourcePropertyMap(providerInputs),
 				AliasURNs: aliases,
 			})
 		require.NoError(t, err)
@@ -552,7 +552,7 @@ func TestSingleResourceExplicitProviderAliasReplace(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource(providers.MakeProviderType("pkgA"), providerName, true,
 			deploytest.ResourceOptions{
-				Inputs:    providerInputs,
+				Inputs:    resource.FromResourcePropertyMap(providerInputs),
 				AliasURNs: aliases,
 			})
 		require.NoError(t, err)
@@ -693,7 +693,7 @@ func TestSingleResourceExplicitProviderDeleteBeforeReplace(t *testing.T) {
 	}
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource(providers.MakeProviderType("pkgA"), "provA", true,
-			deploytest.ResourceOptions{Inputs: providerInputs})
+			deploytest.ResourceOptions{Inputs: resource.FromResourcePropertyMap(providerInputs)})
 		require.NoError(t, err)
 
 		provRef, err := providers.NewReference(resp.URN, resp.ID)
@@ -1220,9 +1220,9 @@ func TestProviderVersionInput(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource(providers.MakeProviderType("pkgA"), "provA", true,
 			deploytest.ResourceOptions{
-				Inputs: resource.PropertyMap{
-					"version": resource.NewProperty("1.0.0"),
-				},
+				Inputs: property.NewMap(map[string]property.Value{
+					"version": property.New("1.0.0"),
+				}),
 			})
 		require.NoError(t, err)
 
@@ -1265,9 +1265,9 @@ func TestProviderVersionInputAndOption(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource(providers.MakeProviderType("pkgA"), "provA", true,
 			deploytest.ResourceOptions{
-				Inputs: resource.PropertyMap{
-					"version": resource.NewProperty("1.5.0"),
-				},
+				Inputs: property.NewMap(map[string]property.Value{
+					"version": property.New("1.5.0"),
+				}),
 				Version: "1.0.0",
 			})
 		require.NoError(t, err)
@@ -2235,7 +2235,7 @@ func TestInternalFiltered(t *testing.T) {
 func TestProviderSameStep(t *testing.T) {
 	t.Parallel()
 
-	providerConfigValue := resource.NewProperty("100")
+	providerConfigValue := property.New("100")
 	loaders := []*deploytest.ProviderLoader{
 		deploytest.NewProviderLoader("pkg", semver.MustParse("1.0.0"), func() (plugin.Provider, error) {
 			return &deploytest.Provider{
@@ -2256,9 +2256,9 @@ func TestProviderSameStep(t *testing.T) {
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pulumi:providers:pkg", "provA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
+			Inputs: property.NewMap(map[string]property.Value{
 				"value": providerConfigValue,
-			},
+			}),
 		})
 		require.NoError(t, err)
 
@@ -2278,7 +2278,7 @@ func TestProviderSameStep(t *testing.T) {
 
 	// Run another update where we send a new value for the provider config, but diff reports no diff so we
 	// should same step
-	providerConfigValue = resource.NewProperty("200")
+	providerConfigValue = property.New("200")
 	snap, err = lt.TestOp(Update).Run(project, p.GetTarget(t, snap), p.Options, false, p.BackendClient, nil)
 	require.NoError(t, err)
 
@@ -2365,9 +2365,9 @@ func TestMissingIDRefresh(t *testing.T) {
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty("bar"),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New("bar"),
+			}),
 		})
 		require.NoError(t, err)
 		assert.Equal(t, expectedID, resp.ID)

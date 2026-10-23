@@ -25,6 +25,7 @@ import (
 	"github.com/pulumi/pulumi/pkg/v3/resource/deploy/deploytest"
 	"github.com/pulumi/pulumi/pkg/v3/resource/plugin"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
+	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,12 +71,14 @@ func TestReplaceWith(t *testing.T) {
 	})
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
-		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{Inputs: ins})
+		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
+			Inputs: resource.FromResourcePropertyMap(ins),
+		})
 		require.NoError(t, err)
 
 		// When we replace A, we should also replace B.
 		_, err = monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-			Inputs:      resource.NewPropertyMapFromMap(map[string]any{"fixed": "property"}),
+			Inputs:      property.NewMap(map[string]property.Value{"fixed": property.New("property")}),
 			ReplaceWith: []resource.URN{respA.URN},
 		})
 		require.NoError(t, err)
@@ -171,7 +174,7 @@ func TestReplaceWithAndDeletedWith(t *testing.T) {
 
 		if numberOfRuns == 0 {
 			respB, err := monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-				Inputs: resource.NewPropertyMapFromMap(map[string]any{}),
+				Inputs: property.NewMap(map[string]property.Value{}),
 			})
 
 			require.NoError(t, err)
@@ -179,14 +182,14 @@ func TestReplaceWithAndDeletedWith(t *testing.T) {
 		}
 
 		respC, err := monitor.RegisterResource("pkgA:m:typA", "resC", true, deploytest.ResourceOptions{
-			Inputs: inputs,
+			Inputs: resource.FromResourcePropertyMap(inputs),
 		})
 
 		require.NoError(t, err)
 		urnC = respC.URN
 
 		opts := deploytest.ResourceOptions{
-			Inputs:      resource.NewPropertyMapFromMap(map[string]any{}),
+			Inputs:      property.NewMap(map[string]property.Value{}),
 			ReplaceWith: []resource.URN{urnC},
 		}
 
@@ -287,12 +290,14 @@ func TestReplaceWithDeleteBeforeReplace(t *testing.T) {
 	})
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
-		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{Inputs: ins})
+		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
+			Inputs: resource.FromResourcePropertyMap(ins),
+		})
 		require.NoError(t, err)
 
 		// When we replace A, we should also replace B.
 		_, err = monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-			Inputs:      resource.NewPropertyMapFromMap(map[string]any{"fixed": "property"}),
+			Inputs:      property.NewMap(map[string]property.Value{"fixed": property.New("property")}),
 			ReplaceWith: []resource.URN{respA.URN},
 		})
 		require.NoError(t, err)

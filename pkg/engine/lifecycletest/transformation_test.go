@@ -36,6 +36,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/archive"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/asset"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/urn"
+	"github.com/pulumi/pulumi/sdk/v3/go/property"
 	pulumirpc "github.com/pulumi/pulumi/sdk/v3/proto/go"
 )
 
@@ -211,9 +212,9 @@ func TestRemoteTransforms(t *testing.T) {
 		require.NoError(t, err)
 
 		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty(1.0),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New(1.0),
+			}),
 			Transforms: []*pulumirpc.Callback{
 				callback2,
 			},
@@ -221,9 +222,9 @@ func TestRemoteTransforms(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty(10.0),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New(10.0),
+			}),
 			Transforms: []*pulumirpc.Callback{
 				callback3,
 			},
@@ -292,9 +293,9 @@ func TestRemoteTransformBadResponse(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty(1.0),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New(1.0),
+			}),
 		})
 		assert.ErrorContains(t, err, "invoke transform: unmarshaling transform response: proto:")
 		assert.ErrorContains(t, err, "cannot parse invalid wire-format data")
@@ -337,9 +338,9 @@ func TestRemoteTransformErrorResponse(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty(1.0),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New(1.0),
+			}),
 		})
 		assert.ErrorContains(t, err, "Unknown desc = bad transform")
 		return err
@@ -375,9 +376,9 @@ func TestRemoteTransformationsConstruct(t *testing.T) {
 
 					_, err = monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
 						Parent: resp.URN,
-						Inputs: resource.PropertyMap{
-							"foo": resource.NewProperty(1.0),
-						},
+						Inputs: property.NewMap(map[string]property.Value{
+							"foo": property.New(1.0),
+						}),
 					})
 					require.NoError(t, err)
 
@@ -583,18 +584,18 @@ func TestRemoteTransformsDependencies(t *testing.T) {
 		defer func() { require.NoError(t, callbacks.Close()) }()
 
 		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty(1.0),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New(1.0),
+			}),
 		})
 		require.NoError(t, err)
-		assert.True(t, respA.Outputs["foo"].IsNumber())
+		assert.True(t, respA.Outputs.Get("foo").IsNumber())
 
 		// Register a separate resource that
 		respB, err := monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty(10.0),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New(10.0),
+			}),
 		})
 		require.NoError(t, err)
 
@@ -608,7 +609,7 @@ func TestRemoteTransformsDependencies(t *testing.T) {
 
 				// Add a dependency on resA
 				props["foo"] = resource.NewProperty(resource.Output{
-					Element:      respA.Outputs["foo"],
+					Element:      resource.ToResourcePropertyValue(respA.Outputs.Get("foo")),
 					Known:        true,
 					Dependencies: []resource.URN{respA.URN},
 				})
@@ -620,9 +621,9 @@ func TestRemoteTransformsDependencies(t *testing.T) {
 		// Register a resource that initially depends on resB but the transform will turn to depend on resA
 		respC, err := monitor.RegisterResource(
 			"pkgA:m:typA", "resC", true, deploytest.ResourceOptions{
-				Inputs: resource.PropertyMap{
-					"foo": respB.Outputs["foo"],
-				},
+				Inputs: property.NewMap(map[string]property.Value{
+					"foo": respB.Outputs.Get("foo"),
+				}),
 				PropertyDeps: map[resource.PropertyKey][]resource.URN{
 					"foo": {respB.URN},
 				},
@@ -631,7 +632,7 @@ func TestRemoteTransformsDependencies(t *testing.T) {
 				},
 			})
 		require.NoError(t, err)
-		assert.True(t, respC.Outputs["foo"].IsNumber())
+		assert.True(t, respC.Outputs.Get("foo").IsNumber())
 		// This is a custom resource so no output dependencies
 		assert.Empty(t, respC.Dependencies)
 		return nil
@@ -683,9 +684,9 @@ func TestRemoteComponentTransforms(t *testing.T) {
 
 					_, err = monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
 						Parent: resp.URN,
-						Inputs: resource.PropertyMap{
-							"foo": resource.NewProperty(1.0),
-						},
+						Inputs: property.NewMap(map[string]property.Value{
+							"foo": property.New(1.0),
+						}),
 					})
 					require.NoError(t, err)
 
@@ -890,16 +891,17 @@ func TestTransformInvoke(t *testing.T) {
 		err = monitor.RegisterStackInvokeTransform(callback)
 		require.NoError(t, err)
 
-		input := resource.PropertyMap{
-			"foo": resource.NewProperty("baz"),
-			"bar": resource.NewProperty("qux"),
-		}
+		input := property.NewMap(map[string]property.Value{
+			"foo": property.New("baz"),
+			"bar": property.New("qux"),
+		})
 
-		result, _, err := monitor.Invoke("pkgA:m:typA", input, implicitProvider, "0.0.0", "")
+		result, _, err := monitor.Invoke(
+			"pkgA:m:typA", input, implicitProvider, "0.0.0", "")
 		require.NoError(t, err)
 
-		assert.Equal(t, "bar", result["foo"].StringValue())
-		assert.Equal(t, "qux", result["bar"].StringValue())
+		assert.Equal(t, "bar", result.Get("foo").AsString())
+		assert.Equal(t, "qux", result.Get("bar").AsString())
 		return nil
 	})
 
@@ -952,9 +954,7 @@ func TestTransformInvokeTransformProvider(t *testing.T) {
 		err = monitor.RegisterStackInvokeTransform(callback)
 		require.NoError(t, err)
 
-		input := resource.PropertyMap{}
-
-		_, _, err = monitor.Invoke("pkgA:m:typA", input, "", "", "")
+		_, _, err = monitor.Invoke("pkgA:m:typA", property.Map{}, "", "", "")
 		require.NoError(t, err)
 
 		return nil
@@ -1057,13 +1057,12 @@ func TestAssetArchiveRoundtrip(t *testing.T) {
 			return &deploytest.Provider{
 				CreateF: func(_ context.Context, req plugin.CreateRequest) (plugin.CreateResponse, error) {
 					// Ensure the archive is rehydrated before we use it.
-					props := resource.ToResourcePropertyMap(req.Properties)
 					assert.Equal(t,
 						"b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
-						props["asset"].AssetValue().Hash)
+						req.Properties.Get("asset").AsAsset().Hash)
 					assert.Equal(t,
 						"f19bab27a7f9d59cff97df356effce0047fefb13c8265e04d0874c0f09df4a16",
-						props["archive"].ArchiveValue().Hash)
+						req.Properties.Get("archive").AsArchive().Hash)
 
 					return plugin.CreateResponse{
 						ID:         "some-id",
@@ -1098,25 +1097,25 @@ func TestAssetArchiveRoundtrip(t *testing.T) {
 		require.NoError(t, err)
 
 		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"asset":   resource.NewProperty(assetValue),
-				"archive": resource.NewProperty(archiveValue),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"asset":   property.New(assetValue),
+				"archive": property.New(archiveValue),
+			}),
 		})
 		require.NoError(t, err)
 
 		assert.Equal(t,
 			"b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
-			respA.Outputs["asset"].AssetValue().Hash)
+			respA.Outputs.Get("asset").AsAsset().Hash)
 		assert.Equal(t,
 			"f19bab27a7f9d59cff97df356effce0047fefb13c8265e04d0874c0f09df4a16",
-			respA.Outputs["archive"].ArchiveValue().Hash)
+			respA.Outputs.Get("archive").AsArchive().Hash)
 
 		respB, err := monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"asset":   resource.NewProperty(assetValue),
-				"archive": resource.NewProperty(archiveValue),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"asset":   property.New(assetValue),
+				"archive": property.New(archiveValue),
+			}),
 			Transforms: []*pulumirpc.Callback{
 				callback1,
 			},
@@ -1124,10 +1123,10 @@ func TestAssetArchiveRoundtrip(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t,
 			"b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
-			respB.Outputs["asset"].AssetValue().Hash)
+			respB.Outputs.Get("asset").AsAsset().Hash)
 		assert.Equal(t,
 			"f19bab27a7f9d59cff97df356effce0047fefb13c8265e04d0874c0f09df4a16",
-			respB.Outputs["archive"].ArchiveValue().Hash)
+			respB.Outputs.Get("archive").AsArchive().Hash)
 		return nil
 	})
 	hostF := deploytest.NewPluginHostF(nil, nil, programF, nil, nil, loaders...)
@@ -1176,9 +1175,9 @@ func TestRemoteTransformByteString(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty(rawBytes),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New(rawBytes),
+			}),
 		})
 		require.NoError(t, err)
 		return nil
@@ -1249,13 +1248,13 @@ func TestTransformInheritedThroughReadParent(t *testing.T) {
 		// A resource read parented to the component.
 		readURN, _, err := monitor.ReadResource(
 			"pkgA:m:typRead", "readR", "read-id", component.URN,
-			resource.PropertyMap{}, "", "", "", nil, "", "")
+			property.Map{}, "", "", "", nil, "", "")
 		require.NoError(t, err)
 
 		// The leaf custom resource is parented to the read resource, not directly to the component.
 		_, err = monitor.RegisterResource("pkgA:m:typLeaf", "leafUnderRead", true, deploytest.ResourceOptions{
 			Parent: readURN,
-			Inputs: resource.PropertyMap{"foo": resource.NewProperty(10.0)},
+			Inputs: property.NewMap(map[string]property.Value{"foo": property.New(10.0)}),
 		})
 		require.NoError(t, err)
 		return nil

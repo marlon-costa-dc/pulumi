@@ -209,7 +209,7 @@ func TestSingleResourceDiffUnavailable(t *testing.T) {
 		}, deploytest.WithGrpc),
 	}
 
-	inputs := resource.PropertyMap{}
+	inputs := property.Map{}
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("pulumi:providers:pkgA", "provA", true, deploytest.ResourceOptions{
 			Inputs: inputs,
@@ -238,9 +238,9 @@ func TestSingleResourceDiffUnavailable(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now run a preview. Expect a warning because the diff is unavailable.
-	inputs = resource.PropertyMap{
-		"input": resource.MakeComputed(resource.NewProperty("")),
-	}
+	inputs = property.NewMap(map[string]property.Value{
+		"input": property.New(property.Computed),
+	})
 	_, err = lt.TestOp(Update).RunStep(project, p.GetTarget(t, snap), p.Options, true, p.BackendClient,
 		func(_ workspace.Project, _ deploy.Target, _ JournalEntries,
 			events []Event, err error,
@@ -399,12 +399,12 @@ func TestInvalidInputDiagnosticsRedactSecrets(t *testing.T) {
 		}),
 	}
 
-	inputs := resource.PropertyMap{
-		"conn": resource.NewProperty(resource.PropertyMap{
-			"host":     resource.NewProperty("example.com"),
-			"password": resource.MakeSecret(resource.NewProperty("secret-input-value")),
-		}),
-	}
+	inputs := property.NewMap(map[string]property.Value{
+		"conn": property.New(property.NewMap(map[string]property.Value{
+			"host":     property.New("example.com"),
+			"password": property.New("secret-input-value").WithSecret(true),
+		})),
+	})
 
 	cases := []struct {
 		name        string
@@ -605,7 +605,7 @@ func TestBadResourceType(t *testing.T) {
 			"someResource",
 			"someId",
 			"",
-			resource.PropertyMap{},
+			property.NewMap(map[string]property.Value{}),
 			"",
 			"",
 			"",
@@ -1076,8 +1076,8 @@ func TestUpdatePartialFailure(t *testing.T) {
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, mon *deploytest.ResourceMonitor) error {
 		_, err := mon.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.NewPropertyMapFromMap(map[string]any{
-				"input_prop": "new inputs",
+			Inputs: property.NewMap(map[string]property.Value{
+				"input_prop": property.New("new inputs"),
 			}),
 		})
 		return err
@@ -1150,13 +1150,14 @@ func TestStackReference(t *testing.T) {
 
 	// Test that the normal lifecycle works correctly.
 	programF := deploytest.NewLanguageRuntimeF(func(info plugin.RunInfo, mon *deploytest.ResourceMonitor) error {
-		_, state, err := mon.ReadResource("pulumi:pulumi:StackReference", "other", "other", "",
-			resource.NewPropertyMapFromMap(map[string]any{
-				"name": "other",
-			}), "", "", "", nil, "", "")
+		readInputs := property.NewMap(map[string]property.Value{
+			"name": property.New("other"),
+		})
+		_, state, err := mon.ReadResource(
+			"pulumi:pulumi:StackReference", "other", "other", "", readInputs, "", "", "", nil, "", "")
 		require.NoError(t, err)
 		if !info.DryRun {
-			assert.Equal(t, "bar", state["outputs"].ObjectValue()["foo"].StringValue())
+			assert.Equal(t, "bar", state.Get("outputs").AsMap().Get("foo").AsString())
 		}
 		return nil
 	})
@@ -1224,10 +1225,11 @@ func TestStackReference(t *testing.T) {
 
 	// Test that unknown stacks are handled appropriately.
 	programF = deploytest.NewLanguageRuntimeF(func(info plugin.RunInfo, mon *deploytest.ResourceMonitor) error {
-		_, _, err := mon.ReadResource("pulumi:pulumi:StackReference", "other", "other", "",
-			resource.NewPropertyMapFromMap(map[string]any{
-				"name": "rehto",
-			}), "", "", "", nil, "", "")
+		readInputs := property.NewMap(map[string]property.Value{
+			"name": property.New("rehto"),
+		})
+		_, _, err := mon.ReadResource(
+			"pulumi:pulumi:StackReference", "other", "other", "", readInputs, "", "", "", nil, "", "")
 		assert.Error(t, err)
 		return err
 	})
@@ -1241,11 +1243,12 @@ func TestStackReference(t *testing.T) {
 
 	// Test that unknown properties cause errors.
 	programF = deploytest.NewLanguageRuntimeF(func(info plugin.RunInfo, mon *deploytest.ResourceMonitor) error {
-		_, _, err := mon.ReadResource("pulumi:pulumi:StackReference", "other", "other", "",
-			resource.NewPropertyMapFromMap(map[string]any{
-				"name": "other",
-				"foo":  "bar",
-			}), "", "", "", nil, "", "")
+		readInputs := property.NewMap(map[string]property.Value{
+			"name": property.New("other"),
+			"foo":  property.New("bar"),
+		})
+		_, _, err := mon.ReadResource(
+			"pulumi:pulumi:StackReference", "other", "other", "", readInputs, "", "", "", nil, "", "")
 		assert.Error(t, err)
 		return err
 	})
@@ -1263,13 +1266,13 @@ func TestStackReferenceRegister(t *testing.T) {
 	// Test that the normal lifecycle works correctly.
 	programF := deploytest.NewLanguageRuntimeF(func(info plugin.RunInfo, mon *deploytest.ResourceMonitor) error {
 		resp, err := mon.RegisterResource("pulumi:pulumi:StackReference", "other", true, deploytest.ResourceOptions{
-			Inputs: resource.NewPropertyMapFromMap(map[string]any{
-				"name": "other",
+			Inputs: property.NewMap(map[string]property.Value{
+				"name": property.New("other"),
 			}),
 		})
 		require.NoError(t, err)
 		if !info.DryRun {
-			assert.Equal(t, "bar", resp.Outputs["outputs"].ObjectValue()["foo"].StringValue())
+			assert.Equal(t, "bar", resp.Outputs.Get("outputs").AsMap().Get("foo").AsString())
 		}
 		return nil
 	})
@@ -1380,8 +1383,8 @@ func TestStackReferenceRegister(t *testing.T) {
 	// Test that unknown stacks are handled appropriately.
 	programF = deploytest.NewLanguageRuntimeF(func(info plugin.RunInfo, mon *deploytest.ResourceMonitor) error {
 		_, err := mon.RegisterResource("pulumi:pulumi:StackReference", "other", true, deploytest.ResourceOptions{
-			Inputs: resource.NewPropertyMapFromMap(map[string]any{
-				"name": "rehto",
+			Inputs: property.NewMap(map[string]property.Value{
+				"name": property.New("rehto"),
 			}),
 		})
 		assert.Error(t, err)
@@ -1398,9 +1401,9 @@ func TestStackReferenceRegister(t *testing.T) {
 	// Test that unknown properties cause errors.
 	programF = deploytest.NewLanguageRuntimeF(func(info plugin.RunInfo, mon *deploytest.ResourceMonitor) error {
 		_, err := mon.RegisterResource("pulumi:pulumi:StackReference", "other", true, deploytest.ResourceOptions{
-			Inputs: resource.NewPropertyMapFromMap(map[string]any{
-				"name": "other",
-				"foo":  "bar",
+			Inputs: property.NewMap(map[string]property.Value{
+				"name": property.New("other"),
+				"foo":  property.New("bar"),
 			}),
 		})
 		assert.Error(t, err)
@@ -1525,7 +1528,7 @@ func TestSingleResourceIgnoreChanges(t *testing.T) {
 		expectedIgnoreChanges = ignoreChanges
 		programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-				Inputs:        props,
+				Inputs:        resource.FromResourcePropertyMap(props),
 				IgnoreChanges: ignoreChanges,
 			})
 			require.NoError(t, err)
@@ -1677,14 +1680,14 @@ func TestIgnoreChangesInvalidPaths(t *testing.T) {
 
 	program := func(monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty(resource.PropertyMap{
-					"bar": resource.NewProperty("baz"),
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New(property.NewMap(map[string]property.Value{
+					"bar": property.New("baz"),
+				})),
+				"qux": property.New([]property.Value{
+					property.New("zed"),
 				}),
-				"qux": resource.NewProperty([]resource.PropertyValue{
-					resource.NewProperty("zed"),
-				}),
-			},
+			}),
 		})
 		require.NoError(t, err)
 		return nil
@@ -1705,7 +1708,7 @@ func TestIgnoreChangesInvalidPaths(t *testing.T) {
 
 	program = func(monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs:        resource.PropertyMap{},
+			Inputs:        property.NewMap(map[string]property.Value{}),
 			IgnoreChanges: []string{"foo.bar"},
 		})
 		require.NoError(t, err)
@@ -1718,9 +1721,9 @@ func TestIgnoreChangesInvalidPaths(t *testing.T) {
 
 	program = func(monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"qux": resource.NewProperty([]resource.PropertyValue{}),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"qux": property.New([]property.Value{}),
+			}),
 			IgnoreChanges: []string{"qux[0]"},
 		})
 		require.NoError(t, err)
@@ -1735,7 +1738,7 @@ func TestIgnoreChangesInvalidPaths(t *testing.T) {
 
 	program = func(monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs:        resource.PropertyMap{},
+			Inputs:        property.NewMap(map[string]property.Value{}),
 			IgnoreChanges: []string{"qux[0]"},
 		})
 		require.NoError(t, err)
@@ -1748,12 +1751,12 @@ func TestIgnoreChangesInvalidPaths(t *testing.T) {
 
 	program = func(monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"qux": resource.NewProperty([]resource.PropertyValue{
-					resource.NewProperty("zed"),
-					resource.NewProperty("zob"),
+			Inputs: property.NewMap(map[string]property.Value{
+				"qux": property.New([]property.Value{
+					property.New("zed"),
+					property.New("zob"),
 				}),
-			},
+			}),
 			IgnoreChanges: []string{"qux[1]"},
 		})
 		require.NoError(t, err)
@@ -1796,7 +1799,7 @@ func replaceOnChangesTest(t *testing.T, name string, diffFunc DiffFunc) {
 		) *deploy.Snapshot {
 			programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 				_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-					Inputs:           props,
+					Inputs:           resource.FromResourcePropertyMap(props),
 					ReplaceOnChanges: replaceOnChanges,
 				})
 				require.NoError(t, err)
@@ -1931,7 +1934,7 @@ func TestPersistentDiff(t *testing.T) {
 		}),
 	}
 
-	inputs := resource.PropertyMap{}
+	inputs := property.Map{}
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
 			Inputs: inputs,
@@ -2012,7 +2015,7 @@ func TestDetailedDiffReplace(t *testing.T) {
 		}),
 	}
 
-	inputs := resource.PropertyMap{}
+	inputs := property.Map{}
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
 			Inputs: inputs,
@@ -2206,7 +2209,7 @@ func TestMissingRead(t *testing.T) {
 			"resA",
 			"resA-some-id",
 			"",
-			resource.PropertyMap{},
+			property.Map{},
 			"",
 			"",
 			"",
@@ -2280,11 +2283,11 @@ func TestProviderPreview(t *testing.T) {
 		})
 
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		require.NoError(t, err)
 
-		assert.True(t, resp.Outputs.DeepEquals(ins))
+		assert.True(t, resource.ToResourcePropertyMap(resp.Outputs).DeepEquals(ins))
 
 		return nil
 	})
@@ -2370,11 +2373,11 @@ func TestProviderPreviewGrpc(t *testing.T) {
 		})
 
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		require.NoError(t, err)
 
-		assert.True(t, resp.Outputs.DeepEquals(ins))
+		assert.True(t, resource.ToResourcePropertyMap(resp.Outputs).DeepEquals(ins))
 
 		return nil
 	})
@@ -2493,13 +2496,13 @@ func TestProviderPreviewUnknowns(t *testing.T) {
 					})
 					require.NoError(t, err)
 
-					outs := resource.PropertyMap{"foo": resource.ToResourcePropertyValue(req.Inputs.Get("name"))}
+					outs := property.NewMap(map[string]property.Value{"foo": req.Inputs.Get("name")})
 					err = monitor.RegisterResourceOutputs(resp.URN, outs)
 					require.NoError(t, err)
 
 					return plugin.ConstructResponse{
 						URN:     resp.URN,
-						Outputs: resource.FromResourcePropertyMap(outs),
+						Outputs: outs,
 					}, nil
 				},
 			}, nil
@@ -2508,14 +2511,14 @@ func TestProviderPreviewUnknowns(t *testing.T) {
 
 	preview := true
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
-		computed := any(resource.Computed{Element: resource.NewProperty("")})
+		computed := property.New(property.Computed)
 		if !preview {
-			computed = "alpha"
+			computed = property.New("alpha")
 		}
 
 		resp, err := monitor.RegisterResource("pulumi:providers:pkgA", "provA", true,
 			deploytest.ResourceOptions{
-				Inputs: resource.NewPropertyMapFromMap(map[string]any{"foo": computed}),
+				Inputs: property.NewMap(map[string]property.Value{"foo": computed}),
 			})
 		require.NoError(t, err)
 
@@ -2533,21 +2536,21 @@ func TestProviderPreviewUnknowns(t *testing.T) {
 		})
 
 		resp, err = monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs:   ins,
+			Inputs:   resource.FromResourcePropertyMap(ins),
 			Provider: provRef.String(),
 		})
 		require.NoError(t, err)
 
 		if preview {
-			assert.True(t, resp.Outputs.DeepEquals(resource.PropertyMap{}))
+			assert.True(t, resp.Outputs.Equals(property.Map{}))
 		} else {
-			assert.True(t, resp.Outputs.DeepEquals(ins))
+			assert.True(t, resource.ToResourcePropertyMap(resp.Outputs).DeepEquals(ins))
 		}
 
 		respC, err := monitor.RegisterResource("pkgA:m:typB", "resB", false, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"name": resp.Outputs["foo"],
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"name": resp.Outputs.Get("foo"),
+			}),
 			Remote:   true,
 			Provider: provRef.String(),
 		})
@@ -2555,51 +2558,51 @@ func TestProviderPreviewUnknowns(t *testing.T) {
 			// We expect construction of remote component resources to fail during previews if the provider is
 			// configured with unknowns.
 			require.NoError(t, err)
-			assert.True(t, respC.Outputs.DeepEquals(resource.PropertyMap{}))
+			assert.True(t, respC.Outputs.Equals(property.Map{}))
 		} else {
 			require.NoError(t, err)
-			assert.True(t, respC.Outputs.DeepEquals(resource.PropertyMap{
-				"foo": resource.NewProperty("bar"),
-			}))
+			assert.True(t, respC.Outputs.Equals(property.NewMap(map[string]property.Value{
+				"foo": property.New("bar"),
+			})))
 		}
 
-		var outs resource.PropertyMap
+		var outs property.Map
 		if preview {
 			// We can't send any args or dependencies in preview because the RegisterResource call above failed.
-			outs, _, _, err = monitor.Call("pkgA:m:typA/methodA", nil, nil, provRef.String(), "", "", "", nil, "")
+			outs, _, _, err = monitor.Call("pkgA:m:typA/methodA", property.Map{}, nil, provRef.String(), "", "", "", nil, "")
 			require.NoError(t, err)
 		} else {
-			outs, _, _, err = monitor.Call("pkgA:m:typA/methodA", resource.PropertyMap{
-				"name": respC.Outputs["foo"],
-			}, map[resource.PropertyKey][]resource.URN{
+			outs, _, _, err = monitor.Call("pkgA:m:typA/methodA", property.NewMap(map[string]property.Value{
+				"name": respC.Outputs.Get("foo"),
+			}), map[resource.PropertyKey][]resource.URN{
 				"name": {respC.URN},
 			}, provRef.String(), "", "", "", nil, "")
 			require.NoError(t, err)
 		}
 		if preview {
-			assert.True(t, outs.DeepEquals(resource.PropertyMap{}), "outs was %v", outs)
+			assert.True(t, outs.Equals(property.Map{}), "outs was %v", outs)
 		} else {
-			assert.True(t, outs.DeepEquals(resource.PropertyMap{
-				"message": resource.NewProperty("Hello, bar!"),
-			}), "outs was %v", outs)
+			assert.True(t, outs.Equals(property.NewMap(map[string]property.Value{
+				"message": property.New("Hello, bar!"),
+			})), "outs was %v", outs)
 		}
 
 		if preview {
-			outs, _, err = monitor.Invoke("pkgA:m:invokeA", resource.PropertyMap{
-				"name": resource.PropertyValue{},
-			}, provRef.String(), "", "")
+			outs, _, err = monitor.Invoke("pkgA:m:invokeA", property.NewMap(map[string]property.Value{
+				"name": {},
+			}), provRef.String(), "", "")
 		} else {
-			outs, _, err = monitor.Invoke("pkgA:m:invokeA", resource.PropertyMap{
-				"name": respC.Outputs["foo"],
-			}, provRef.String(), "", "")
+			outs, _, err = monitor.Invoke("pkgA:m:invokeA", property.NewMap(map[string]property.Value{
+				"name": respC.Outputs.Get("foo"),
+			}), provRef.String(), "", "")
 		}
 		require.NoError(t, err)
 		if preview {
-			assert.True(t, outs.DeepEquals(resource.PropertyMap{}), "outs was %v", outs)
+			assert.True(t, outs.Equals(property.Map{}), "outs was %v", outs)
 		} else {
-			assert.True(t, outs.DeepEquals(resource.PropertyMap{
-				"message": resource.NewProperty("Hello, bar!"),
-			}), "outs was %v", outs)
+			assert.True(t, outs.Equals(property.NewMap(map[string]property.Value{
+				"message": property.New("Hello, bar!"),
+			})), "outs was %v", outs)
 		}
 
 		return nil
@@ -2807,11 +2810,11 @@ func TestComponentOutputs(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("component", "resA", false)
 		require.NoError(t, err)
-		assert.Equal(t, resource.PropertyMap{}, resp.Outputs)
+		assert.Equal(t, property.Map{}, resp.Outputs)
 
-		err = monitor.RegisterResourceOutputs(resp.URN, resource.PropertyMap{
-			"foo": resource.NewProperty("bar"),
-		})
+		err = monitor.RegisterResourceOutputs(resp.URN, property.NewMap(map[string]property.Value{
+			"foo": property.New("bar"),
+		}))
 		require.NoError(t, err)
 		return nil
 	})
@@ -2871,7 +2874,7 @@ func TestProtect(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		if createResource {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-				Inputs:  ins,
+				Inputs:  resource.FromResourcePropertyMap(ins),
 				Protect: &shouldProtect,
 			})
 			if expectError {
@@ -3031,7 +3034,7 @@ func TestImportDiff(t *testing.T) {
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs:   ins,
+			Inputs:   resource.FromResourcePropertyMap(ins),
 			ImportID: "imported-id",
 		})
 		if err != nil {
@@ -3139,19 +3142,19 @@ func TestDeletedWith(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		if createResource {
 			respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-				Inputs: ins,
+				Inputs: resource.FromResourcePropertyMap(ins),
 			})
 			require.NoError(t, err)
 			topURN = respA.URN
 
 			respB, err := monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-				Inputs:      ins,
+				Inputs:      resource.FromResourcePropertyMap(ins),
 				DeletedWith: respA.URN,
 			})
 			require.NoError(t, err)
 
 			_, err = monitor.RegisterResource("pkgA:m:typA", "resC", true, deploytest.ResourceOptions{
-				Inputs:      ins,
+				Inputs:      resource.FromResourcePropertyMap(ins),
 				DeletedWith: respB.URN,
 			})
 			require.NoError(t, err)
@@ -3249,11 +3252,13 @@ func TestReplaceWithAndPropertyChange(t *testing.T) {
 	})
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
-		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{Inputs: insA})
+		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
+			Inputs: resource.FromResourcePropertyMap(insA),
+		})
 		require.NoError(t, err)
 
 		_, err = monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-			Inputs:      insB,
+			Inputs:      resource.FromResourcePropertyMap(insB),
 			ReplaceWith: []resource.URN{respA.URN},
 		})
 		require.NoError(t, err)
@@ -3305,7 +3310,7 @@ func TestInvalidGetIDReportsUserError(t *testing.T) {
 	}
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
-		_, _, err := monitor.ReadResource("pkgA:m:typA", "resA", "", "", resource.PropertyMap{}, "", "", "", nil, "", "")
+		_, _, err := monitor.ReadResource("pkgA:m:typA", "resA", "", "", property.Map{}, "", "", "", nil, "", "")
 		assert.Error(t, err)
 		return nil
 	})
@@ -3362,7 +3367,7 @@ func TestEventSecrets(t *testing.T) {
 	var inputs resource.PropertyMap
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: inputs,
+			Inputs: resource.FromResourcePropertyMap(inputs),
 		})
 		require.NoError(t, err)
 		return nil
@@ -3447,7 +3452,7 @@ func TestAdditionalSecretOutputs(t *testing.T) {
 	var inputs resource.PropertyMap
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs:                  inputs,
+			Inputs:                  resource.FromResourcePropertyMap(inputs),
 			AdditionalSecretOutputs: []resource.PropertyKey{"a", "b"},
 		})
 		require.NoError(t, err)
@@ -3665,13 +3670,13 @@ func TestPendingDeleteOrder(t *testing.T) {
 	})
 	programF := deploytest.NewLanguageRuntimeF(func(info plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		require.NoError(t, err)
 
 		_, err = monitor.RegisterResource("pkgA:m:typB", "resB", true, deploytest.ResourceOptions{
-			Inputs: resource.NewPropertyMapFromMap(map[string]any{
-				"parent": resp.ID,
+			Inputs: property.NewMap(map[string]property.Value{
+				"parent": property.New(string(resp.ID)),
 			}),
 			Dependencies: []resource.URN{resp.URN},
 		})
@@ -3826,14 +3831,14 @@ func TestPendingDeleteReplacement(t *testing.T) {
 	inB := "active"
 	programF := deploytest.NewLanguageRuntimeF(func(info plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: insA,
+			Inputs: resource.FromResourcePropertyMap(insA),
 		})
 		require.NoError(t, err)
 
 		_, err = monitor.RegisterResource("pkgA:m:typB", "resB", true, deploytest.ResourceOptions{
-			Inputs: resource.NewPropertyMapFromMap(map[string]any{
-				"parent": respA.ID,
-				"frob":   inB,
+			Inputs: property.NewMap(map[string]property.Value{
+				"parent": property.New(string(respA.ID)),
+				"frob":   property.New(inB),
 			}),
 			PropertyDeps: map[resource.PropertyKey][]resource.URN{
 				"parent": {respA.URN},
@@ -4135,7 +4140,7 @@ func TestOldCheckedInputsAreSent(t *testing.T) {
 	})
 	programF := deploytest.NewLanguageRuntimeF(func(info plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: insA,
+			Inputs: resource.FromResourcePropertyMap(insA),
 		})
 		require.NoError(t, err)
 		return nil
@@ -4275,7 +4280,7 @@ func TestResourceNames(t *testing.T) {
 func TestSourcePositions(t *testing.T) {
 	t.Parallel()
 
-	inputs := resource.PropertyMap{}
+	inputs := property.Map{}
 
 	fileURL := func(path string) string { return "file://" + path }
 
@@ -4303,7 +4308,7 @@ func TestSourcePositions(t *testing.T) {
 					})
 					require.NoError(t, err)
 
-					callInputs := resource.PropertyMap{"name": resource.NewProperty(req.Name)}
+					callInputs := property.NewMap(map[string]property.Value{"name": property.New(req.Name)})
 					_, _, _, err = monitor.Call(
 						"pkgA:m:callA",
 						callInputs,
@@ -4412,11 +4417,13 @@ func TestSourcePositions(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		callInputs := resource.PropertyMap{"name": resource.NewProperty("progCall")}
-		_, _, _, err = monitor.Call("pkgA:m:callA", callInputs, nil, "", "", "", fileURL(callPos), []pkgresource.StackFrame{
-			{SourcePosition: fileURL(progPos)},
-			{SourcePosition: fileURL(callPos)},
-		}, "")
+		callInputs := property.NewMap(map[string]property.Value{"name": property.New("progCall")})
+		_, _, _, err = monitor.Call(
+			"pkgA:m:callA", callInputs, nil, "", "", "", fileURL(callPos),
+			[]pkgresource.StackFrame{
+				{SourcePosition: fileURL(progPos)},
+				{SourcePosition: fileURL(callPos)},
+			}, "")
 		require.NoError(t, err)
 
 		return nil
@@ -4599,7 +4606,7 @@ func TestProviderChecksums(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		if createResource {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-				Inputs: ins,
+				Inputs: resource.FromResourcePropertyMap(ins),
 				PluginChecksums: map[string][]byte{
 					"windows-x64": {0, 1, 2, 3, 4},
 				},
@@ -4645,9 +4652,9 @@ func TestAutomaticDiff(t *testing.T) {
 		}),
 	}
 
-	inputs := resource.PropertyMap{
-		"foo": resource.NewProperty(1.0),
-	}
+	inputs := property.NewMap(map[string]property.Value{
+		"foo": property.New(1.0),
+	})
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
 			Inputs: inputs,
@@ -4668,9 +4675,9 @@ func TestAutomaticDiff(t *testing.T) {
 	require.NoError(t, err)
 
 	// Change the inputs and run again
-	inputs = resource.PropertyMap{
-		"foo": resource.NewProperty(2.0),
-	}
+	inputs = property.NewMap(map[string]property.Value{
+		"foo": property.New(2.0),
+	})
 	_, err = lt.TestOp(Update).Run(project, p.GetTarget(t, snap), p.Options, true, p.BackendClient,
 		func(_ workspace.Project, _ deploy.Target, _ JournalEntries,
 			events []Event, err error,
@@ -4739,7 +4746,7 @@ func TestStackOutputsProgramError(t *testing.T) {
 			outputs = resource.PropertyMap{}
 		}
 
-		err = monitor.RegisterResourceOutputs(resp.URN, outputs)
+		err = monitor.RegisterResourceOutputs(resp.URN, resource.FromResourcePropertyMap(outputs))
 		require.NoError(t, err)
 
 		if step == 1 || step == 2 {
@@ -4824,14 +4831,14 @@ func TestStackOutputsResourceError(t *testing.T) {
 		resp, err := monitor.RegisterResource(resource.RootStackType, "test", false)
 		require.NoError(t, err)
 
-		val := resource.NewProperty(fmt.Sprintf("step %v", step))
+		val := property.New(fmt.Sprintf("step %v", step))
 
 		switch step {
 		case 0, 3:
-			outsErr := monitor.RegisterResourceOutputs(resp.URN, resource.PropertyMap{
+			outsErr := monitor.RegisterResourceOutputs(resp.URN, property.NewMap(map[string]property.Value{
 				"first":  val,
 				"second": val,
-			})
+			}))
 			require.NoError(t, outsErr)
 
 		case 1:
@@ -4840,10 +4847,10 @@ func TestStackOutputsResourceError(t *testing.T) {
 			// is exported as a stack output.
 
 		case 2:
-			outsErr := monitor.RegisterResourceOutputs(resp.URN, resource.PropertyMap{
+			outsErr := monitor.RegisterResourceOutputs(resp.URN, property.NewMap(map[string]property.Value{
 				"first":  val,
 				"second": val,
-			})
+			}))
 			require.NoError(t, outsErr)
 
 			_, err = monitor.RegisterResource("pkgA:m:typA", "resA", true)

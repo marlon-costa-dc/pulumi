@@ -33,6 +33,7 @@ import (
 	"github.com/pulumi/pulumi/pkg/v3/resource/plugin"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
+	"github.com/pulumi/pulumi/sdk/v3/go/property"
 )
 
 func TestPlannedUpdate(t *testing.T) {
@@ -56,7 +57,7 @@ func TestPlannedUpdate(t *testing.T) {
 	expectError := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		if expectError {
 			return nil
@@ -176,7 +177,7 @@ func TestPlanViolationSecrets(t *testing.T) {
 		expectError := false
 		programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-				Inputs: ins,
+				Inputs: resource.FromResourcePropertyMap(ins),
 			})
 			if expectError {
 				return nil
@@ -252,7 +253,7 @@ func TestUnplannedCreate(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		if createResource {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-				Inputs: ins,
+				Inputs: resource.FromResourcePropertyMap(ins),
 			})
 			assert.ErrorContains(t, err, "context canceled")
 		}
@@ -313,13 +314,13 @@ func TestUnplannedDelete(t *testing.T) {
 	createAllResources := true
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		require.NoError(t, err)
 
 		if createAllResources {
 			_, err = monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-				Inputs: ins,
+				Inputs: resource.FromResourcePropertyMap(ins),
 			})
 			require.NoError(t, err)
 		}
@@ -387,13 +388,13 @@ func TestExpectedDelete(t *testing.T) {
 	expectError := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		require.NoError(t, err)
 
 		if createAllResources {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-				Inputs: ins,
+				Inputs: resource.FromResourcePropertyMap(ins),
 			})
 			if expectError {
 				return nil
@@ -466,13 +467,13 @@ func TestExpectedCreate(t *testing.T) {
 	createAllResources := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		require.NoError(t, err)
 
 		if createAllResources {
 			_, err = monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-				Inputs: ins,
+				Inputs: resource.FromResourcePropertyMap(ins),
 			})
 			require.NoError(t, err)
 		}
@@ -541,7 +542,7 @@ func TestPropertySetChange(t *testing.T) {
 	expectError := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		if expectError {
 			return nil
@@ -604,7 +605,7 @@ func TestExpectedUnneededCreate(t *testing.T) {
 	})
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		require.NoError(t, err)
 
@@ -669,7 +670,7 @@ func TestExpectedUnneededDelete(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		if createResource {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-				Inputs: ins,
+				Inputs: resource.FromResourcePropertyMap(ins),
 			})
 			require.NoError(t, err)
 		}
@@ -739,15 +740,15 @@ func TestResoucesWithSames(t *testing.T) {
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		if createA {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-				Inputs: ins,
+				Inputs: resource.FromResourcePropertyMap(ins),
 			})
 			require.NoError(t, err)
 		}
 
 		if createB {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-				Inputs: resource.NewPropertyMapFromMap(map[string]any{
-					"X": "Y",
+				Inputs: property.NewMap(map[string]property.Value{
+					"X": property.New("Y"),
 				}),
 			})
 			require.NoError(t, err)
@@ -840,7 +841,7 @@ func TestPlannedPreviews(t *testing.T) {
 	expectError := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		if expectError {
 			return nil
@@ -935,7 +936,7 @@ func TestPlannedUpdateChangedStack(t *testing.T) {
 	expectError := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		if expectError {
 			return nil
@@ -1020,9 +1021,9 @@ func TestPlannedOutputChanges(t *testing.T) {
 		}),
 	}
 
-	outs := resource.NewPropertyMapFromMap(map[string]any{
-		"foo":  "bar",
-		"frob": "baz",
+	outs := property.NewMap(map[string]property.Value{
+		"foo":  property.New("bar"),
+		"frob": property.New("baz"),
 	})
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{})
@@ -1050,8 +1051,8 @@ func TestPlannedOutputChanges(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now change the runtime to not return property "frob", this should error
-	outs = resource.NewPropertyMapFromMap(map[string]any{
-		"foo": "bar",
+	outs = property.NewMap(map[string]property.Value{
+		"foo": property.New("bar"),
 	})
 	p.Options.Plan = plan.Clone()
 	validate := ExpectDiagMessage(t, regexp.QuoteMeta(
@@ -1066,15 +1067,15 @@ func TestPlannedInputOutputDifferences(t *testing.T) {
 
 	// This tests that plans are working on the program inputs, not the provider outputs
 
-	createOutputs := resource.NewPropertyMapFromMap(map[string]any{
-		"foo":  "bar",
-		"frob": "baz",
-		"baz":  24,
+	createOutputs := property.NewMap(map[string]property.Value{
+		"foo":  property.New("bar"),
+		"frob": property.New("baz"),
+		"baz":  property.New(float64(24)),
 	})
-	updateOutputs := resource.NewPropertyMapFromMap(map[string]any{
-		"foo":  "bar",
-		"frob": "newBazzer",
-		"baz":  24,
+	updateOutputs := property.NewMap(map[string]property.Value{
+		"foo":  property.New("bar"),
+		"frob": property.New("newBazzer"),
+		"baz":  property.New(float64(24)),
 	})
 
 	loaders := []*deploytest.ProviderLoader{
@@ -1083,13 +1084,13 @@ func TestPlannedInputOutputDifferences(t *testing.T) {
 				CreateF: func(_ context.Context, req plugin.CreateRequest) (plugin.CreateResponse, error) {
 					return plugin.CreateResponse{
 						ID:         resource.ID("created-id-" + req.URN.Name()),
-						Properties: resource.FromResourcePropertyMap(createOutputs),
+						Properties: createOutputs,
 						Status:     resource.StatusOK,
 					}, nil
 				},
 				UpdateF: func(_ context.Context, req plugin.UpdateRequest) (plugin.UpdateResponse, error) {
 					return plugin.UpdateResponse{
-						Properties: resource.FromResourcePropertyMap(updateOutputs),
+						Properties: updateOutputs,
 						Status:     resource.StatusOK,
 					}, nil
 				},
@@ -1104,7 +1105,7 @@ func TestPlannedInputOutputDifferences(t *testing.T) {
 	expectError := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: inputs,
+			Inputs: resource.FromResourcePropertyMap(inputs),
 		})
 		if expectError {
 			return nil
@@ -1200,7 +1201,7 @@ func TestAliasWithPlans(t *testing.T) {
 	})
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", resourceName, true, deploytest.ResourceOptions{
-			Inputs:    ins,
+			Inputs:    resource.FromResourcePropertyMap(ins),
 			AliasURNs: aliases,
 		})
 		require.NoError(t, err)
@@ -1265,12 +1266,12 @@ func TestComputedCanBeDropped(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-			Inputs: resourceInputs,
+			Inputs: resource.FromResourcePropertyMap(resourceInputs),
 		})
 		require.NoError(t, err)
 
 		// We're using the same property set on purpose, this is not a test bug
-		err = monitor.RegisterResourceOutputs(resp.URN, resourceInputs)
+		err = monitor.RegisterResourceOutputs(resp.URN, resource.FromResourcePropertyMap(resourceInputs))
 		require.NoError(t, err)
 
 		return nil
@@ -1393,17 +1394,13 @@ func TestPlannedUpdateWithNondeterministicCheck(t *testing.T) {
 						return plugin.CheckResponse{Properties: req.NewInputs}, nil
 					}
 					if name, has := req.OldInputs.GetOk("name"); has {
-						result := resource.ToResourcePropertyMap(req.NewInputs)
-						result["name"] = resource.ToResourcePropertyValue(name)
-						return plugin.CheckResponse{Properties: resource.FromResourcePropertyMap(result)}, nil
+						return plugin.CheckResponse{Properties: req.NewInputs.Set("name", name)}, nil
 					}
 
 					name, err := resource.NewUniqueHex(req.URN.Name(), 8, 512)
 					require.NoError(t, err)
 
-					result := resource.ToResourcePropertyMap(req.NewInputs)
-					result["name"] = resource.NewProperty(name)
-					return plugin.CheckResponse{Properties: resource.FromResourcePropertyMap(result)}, nil
+					return plugin.CheckResponse{Properties: req.NewInputs.Set("name", property.New(name))}, nil
 				},
 			}, nil
 		}),
@@ -1413,13 +1410,13 @@ func TestPlannedUpdateWithNondeterministicCheck(t *testing.T) {
 	expectError := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		resp, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 
 		if err == nil {
 			_, err := monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-				Inputs: resource.NewPropertyMapFromMap(map[string]any{
-					"other": resp.Outputs["name"].StringValue(),
+				Inputs: property.NewMap(map[string]property.Value{
+					"other": property.New(resp.Outputs.Get("name").AsString()),
 				}),
 			})
 			if expectError {
@@ -1508,7 +1505,7 @@ func TestPlannedUpdateWithCheckFailure(t *testing.T) {
 	expectError := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		if expectError {
 			return nil
@@ -1605,7 +1602,7 @@ func TestPluginsAreDownloaded(t *testing.T) {
 func TestProviderDeterministicPreview(t *testing.T) {
 	t.Parallel()
 
-	var generatedName resource.PropertyValue
+	var generatedName property.Value
 
 	loaders := []*deploytest.ProviderLoader{
 		deploytest.NewProviderLoader("pkgA", semver.MustParse("1.0.0"), func() (plugin.Provider, error) {
@@ -1616,16 +1613,16 @@ func TestProviderDeterministicPreview(t *testing.T) {
 				) (plugin.CheckResponse, error) {
 					// make a deterministic autoname
 					if _, has := req.NewInputs.GetOk("name"); !has {
-						result := resource.ToResourcePropertyMap(req.NewInputs)
+						var nameValue property.Value
 						if name, has := req.OldInputs.GetOk("name"); has {
-							result["name"] = resource.ToResourcePropertyValue(name)
+							nameValue = name
 						} else {
 							name, err := resource.NewUniqueName(req.RandomSeed, req.URN.Name(), -1, -1, nil)
 							require.NoError(t, err)
-							generatedName = resource.NewProperty(name)
-							result["name"] = generatedName
+							generatedName = property.New(name)
+							nameValue = generatedName
 						}
-						return plugin.CheckResponse{Properties: resource.FromResourcePropertyMap(result)}, nil
+						return plugin.CheckResponse{Properties: req.NewInputs.Set("name", nameValue)}, nil
 					}
 
 					return plugin.CheckResponse{Properties: req.NewInputs}, nil
@@ -1657,7 +1654,7 @@ func TestProviderDeterministicPreview(t *testing.T) {
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		require.NoError(t, err)
 		return nil
@@ -1678,8 +1675,8 @@ func TestProviderDeterministicPreview(t *testing.T) {
 	plan, err := lt.TestOp(Update).Plan(project, p.GetTarget(t, nil), p.Options, p.BackendClient, nil)
 	require.NoError(t, err)
 	assert.True(t, generatedName.IsString())
-	assert.NotEqual(t, "", generatedName.StringValue())
-	expectedName := generatedName
+	assert.NotEqual(t, "", generatedName.AsString())
+	expectedName := resource.ToResourcePropertyValue(generatedName)
 
 	// Run an update, we should get the same name as we saw in preview
 	p.Options.Plan = plan
@@ -1738,7 +1735,7 @@ func TestPlannedUpdateWithDependentDelete(t *testing.T) {
 	var ins resource.PropertyMap
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		respA, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: ins,
+			Inputs: resource.FromResourcePropertyMap(ins),
 		})
 		require.NoError(t, err)
 
@@ -1813,9 +1810,9 @@ func TestResourcesTargeted(t *testing.T) {
 	expectError := false
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty("bar"),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New("bar"),
+			}),
 		})
 		if expectError {
 			return nil
@@ -1824,9 +1821,9 @@ func TestResourcesTargeted(t *testing.T) {
 		}
 
 		_, _ = monitor.RegisterResource("pkgA:m:typA", "resB", true, deploytest.ResourceOptions{
-			Inputs: resource.PropertyMap{
-				"foo": resource.NewProperty("bar"),
-			},
+			Inputs: property.NewMap(map[string]property.Value{
+				"foo": property.New("bar"),
+			}),
 		})
 
 		return nil
@@ -1905,9 +1902,9 @@ func TestStackOutputsWithTargetedPlan(t *testing.T) {
 
 		require.NoError(t, err)
 
-		err = monitor.RegisterResourceOutputs(resp.URN, resource.PropertyMap{
-			"foo": resource.NewProperty("bar"),
-		})
+		err = monitor.RegisterResourceOutputs(resp.URN, property.NewMap(map[string]property.Value{
+			"foo": property.New("bar"),
+		}))
 
 		require.NoError(t, err)
 
@@ -1954,14 +1951,12 @@ func TestStackOutputsWithTargetedPlan(t *testing.T) {
 func TestPlannedUpdateWithInternalKeys(t *testing.T) {
 	t.Parallel()
 
-	var defaultsValue resource.PropertyValue
+	var defaultsValue property.Value
 	loaders := []*deploytest.ProviderLoader{
 		deploytest.NewProviderLoader("pkgA", semver.MustParse("1.0.0"), func() (plugin.Provider, error) {
 			return &deploytest.Provider{
 				CheckF: func(_ context.Context, req plugin.CheckRequest) (plugin.CheckResponse, error) {
-					news := resource.ToResourcePropertyMap(req.NewInputs)
-					news["__defaults"] = defaultsValue
-					return plugin.CheckResponse{Properties: resource.FromResourcePropertyMap(news)}, nil
+					return plugin.CheckResponse{Properties: req.NewInputs.Set("__defaults", defaultsValue)}, nil
 				},
 				CreateF: func(_ context.Context, req plugin.CreateRequest) (plugin.CreateResponse, error) {
 					return plugin.CreateResponse{
@@ -1976,7 +1971,7 @@ func TestPlannedUpdateWithInternalKeys(t *testing.T) {
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs: resource.NewPropertyMapFromMap(map[string]any{"foo": "bar"}),
+			Inputs: property.NewMap(map[string]property.Value{"foo": property.New("bar")}),
 		})
 		require.NoError(t, err)
 		return nil
@@ -1993,7 +1988,7 @@ func TestPlannedUpdateWithInternalKeys(t *testing.T) {
 	project := p.GetProject()
 
 	// Generate a plan with one shape of __defaults.
-	defaultsValue = resource.NewProperty([]resource.PropertyValue{resource.NewProperty("a")})
+	defaultsValue = property.New([]property.Value{property.New("a")})
 	plan, err := lt.TestOp(Update).Plan(project, p.GetTarget(t, nil), p.Options, p.BackendClient, nil)
 	require.NoError(t, err)
 
@@ -2007,7 +2002,7 @@ func TestPlannedUpdateWithInternalKeys(t *testing.T) {
 
 	// Run the update with a different __defaults value. This must not be considered a plan
 	// violation because internal ("__"-prefixed) keys should be ignored by plan checks.
-	defaultsValue = resource.NewProperty([]resource.PropertyValue{resource.NewProperty("b")})
+	defaultsValue = property.New([]property.Value{property.New("b")})
 	p.Options.Plan = plan.Clone()
 	snap, err := lt.TestOp(Update).RunStep(
 		project, p.GetTarget(t, nil), p.Options, false, p.BackendClient, nil, "0")

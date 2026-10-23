@@ -446,7 +446,7 @@ func TestIgnoreProtectReplace(t *testing.T) {
 	inputsA := resource.NewPropertyMapFromMap(map[string]any{"A": "foo"})
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		_, err := monitor.RegisterResource("pkgA:m:typA", "resA", true, deploytest.ResourceOptions{
-			Inputs:  inputsA,
+			Inputs:  resource.FromResourcePropertyMap(inputsA),
 			Protect: new(true),
 		})
 		if err != nil {
@@ -528,7 +528,7 @@ func TestIgnoreProtectDBRChain(t *testing.T) {
 
 	programF := deploytest.NewLanguageRuntimeF(func(_ plugin.RunInfo, monitor *deploytest.ResourceMonitor) error {
 		respA, err := monitor.RegisterResource(resType, "resA", true, deploytest.ResourceOptions{
-			Inputs: inputsA,
+			Inputs: resource.FromResourcePropertyMap(inputsA),
 		})
 		if err != nil {
 			return err
@@ -536,7 +536,7 @@ func TestIgnoreProtectDBRChain(t *testing.T) {
 
 		inputDepsB := map[resource.PropertyKey][]resource.URN{"A": {respA.URN}}
 		_, err = monitor.RegisterResource(resType, "resB", true, deploytest.ResourceOptions{
-			Inputs:       inputsB,
+			Inputs:       resource.FromResourcePropertyMap(inputsB),
 			Dependencies: []resource.URN{respA.URN},
 			PropertyDeps: inputDepsB,
 			Protect:      new(true),
