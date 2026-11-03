@@ -159,6 +159,7 @@ func confirmGuidedValues(
 		}
 	}
 	if shows.stack {
+		useProjectForStackNames(b, c.name)
 		if c.stackName, err = buildStackName(ctx, b, defaultStackName); err != nil {
 			return nil, err
 		}
@@ -200,6 +201,7 @@ func confirmGuidedValues(
 		return nil, err
 	}
 	if shows.stack {
+		useProjectForStackNames(b, c.name)
 		if c.stackName, err = promptStackName(
 			args.stdout, b, args.prompt, c.stackName, false, opts, b.ValidateStackName,
 		); err != nil {
