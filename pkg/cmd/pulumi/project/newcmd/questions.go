@@ -58,6 +58,9 @@ type setupAnswers struct {
 	config *askedConfig
 	// runtimeOptions answer the language runtime's questions, such as which package manager to use.
 	runtimeOptions map[string]any
+	// secrets is the new stack's secrets manager, prepared so its passphrase is asked with the other
+	// questions. Nil when no stack is created, or with --force.
+	secrets *cmdStack.NewStackSecrets
 }
 
 // askedConfig is template config gathered before the stack exists, held as plaintext until the
@@ -73,19 +76,27 @@ func askSetupQuestions(
 	ctx context.Context, ws pkgWorkspace.Context, b backend.Backend, orgName string, existing backend.Stack,
 	template cmdTemplates.ProjectTemplate, args newArgs, opts display.Options, cwd string,
 ) (*setupAnswers, error) {
-	answers, err := askProjectQuestions(ctx, b, orgName, existing, template, args, opts, cwd)
+	createsStack := !args.generateOnly && existing == nil
+	answers, err := askProjectQuestions(ctx, b, orgName, createsStack, template, args, opts, cwd)
 	if err != nil {
 		return nil, err
 	}
 	if answers.runtimeOptions, err = promptTemplateRuntimeOptions(ctx, ws, template, args, opts); err != nil {
 		return nil, err
 	}
+	// With --force the stack's config file may already exist, and its secrets settings win at stack
+	// creation, so a passphrase asked now would be thrown away.
+	if createsStack && !args.force {
+		if answers.secrets, err = cmdStack.PrepareNewStackSecrets(ctx, b, args.secretsProvider); err != nil {
+			return nil, err
+		}
+	}
 	return answers, nil
 }
 
 // askProjectQuestions asks the guided or sequential project questions.
 func askProjectQuestions(
-	ctx context.Context, b backend.Backend, orgName string, existing backend.Stack,
+	ctx context.Context, b backend.Backend, orgName string, createsStack bool,
 	template cmdTemplates.ProjectTemplate, args newArgs, opts display.Options, cwd string,
 ) (*setupAnswers, error) {
 	defaults := resolveProjectDefaults(ctx, b, orgName, template, args, opts, cwd)
@@ -100,7 +111,6 @@ func askProjectQuestions(
 	); err != nil {
 		return nil, err
 	}
-	createsStack := !args.generateOnly && existing == nil
 	if createsStack && args.stack == "" {
 		useProjectForStackNames(b, answers.name)
 		if answers.stackName, err = promptStackName(
@@ -179,6 +189,7 @@ func (a *setupAnswers) createStack(
 		SecretsProvider:    args.secretsProvider,
 		UseRemoteConfig:    args.remoteStackConfig,
 		ManagedEnvironment: args.escConfig,
+		Secrets:            a.secrets,
 		// The confirmation already showed the stack name, and the summary repeats it and names any
 		// managed environment.
 		Quiet: a.confirmedStack(),
