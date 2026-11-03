@@ -26,13 +26,9 @@ import (
 	"github.com/pulumi/pulumi/pkg/v3/backend"
 	"github.com/pulumi/pulumi/pkg/v3/backend/display"
 	cmdConfig "github.com/pulumi/pulumi/pkg/v3/cmd/pulumi/config"
-	cmdStack "github.com/pulumi/pulumi/pkg/v3/cmd/pulumi/stack"
 	cmdTemplates "github.com/pulumi/pulumi/pkg/v3/cmd/pulumi/templates"
-	"github.com/pulumi/pulumi/sdk/v3/go/common/diag"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/diag/colors"
-	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
-	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
 
 	pkgWorkspace "github.com/pulumi/pulumi/pkg/v3/workspace"
 )
@@ -43,62 +39,6 @@ const (
 )
 
 var errConfirmationInterrupted = errors.New("no project created; please use `pulumi new` to start again")
-
-// A nil *confirmedNew means the guided path did not run and the sequential prompts own the flow.
-type confirmedNew struct {
-	name        string
-	description string
-	// Empty when the confirmation did not cover the stack.
-	stackName         string
-	config            []templateConfigValue
-	commandLineConfig config.Map
-}
-
-func (c *confirmedNew) createsStack() bool {
-	return c != nil && c.stackName != ""
-}
-
-// createStack creates the stack confirmed earlier, falling through to the sequential
-// prompt-and-create flow when the confirmation did not cover the stack.
-func (c *confirmedNew) createStack(
-	ctx context.Context, sink diag.Sink, ws pkgWorkspace.Context, b backend.Backend,
-	root string, args newArgs, opts display.Options,
-) (backend.Stack, string, error) {
-	createOpts := cmdStack.CreateStackOptions{
-		SetCurrent:         true,
-		SecretsProvider:    args.secretsProvider,
-		UseRemoteConfig:    args.remoteStackConfig,
-		ManagedEnvironment: args.escConfig,
-	}
-	if c.createsStack() {
-		// Quiet: the confirmation already showed the stack name, and the summary repeats it and names any
-		// managed environment.
-		createOpts.Quiet = true
-		return createStackWithRetry(ctx, sink, args.stdout, ws, b, args.prompt, c.stackName, root, args.yes, opts,
-			createOpts)
-	}
-	s, err := promptAndCreateStack(ctx, sink, ws, b, args.prompt, args.stack, root, args.yes, opts, createOpts)
-	if err != nil {
-		return nil, "", err
-	}
-	// cmdStack.CreateStack prints "Created stack '<stack>'" on success.
-	fmt.Fprintln(args.stdout)
-	return s, "", nil
-}
-
-// saveConfig saves the config gathered at confirmation, falling through to the sequential
-// prompt-and-save flow when the confirmation did not cover the stack.
-func (c *confirmedNew) saveConfig(
-	ctx context.Context, sink diag.Sink, ssml cmdStack.SecretsManagerLoader, ws pkgWorkspace.Context,
-	proj *workspace.Project, s backend.Stack, template cmdTemplates.ProjectTemplate,
-	args newArgs, opts display.Options,
-) (config.Map, error) {
-	if c.createsStack() {
-		return saveTemplateConfig(ctx, sink, ssml, ws, proj, s, c.config, c.commandLineConfig, "")
-	}
-	return handleConfig(ctx, sink, ssml, ws, args.prompt, proj, s,
-		args.templateNameOrURL, template, args.configArray, args.yes, args.configPath, opts, "")
-}
 
 func printPreamble(w io.Writer, opts display.Options) {
 	fmt.Fprintln(w, "This command will walk you through creating a new Pulumi project.")
@@ -198,7 +138,7 @@ func promptProjectName(
 func confirmGuidedValues(
 	ctx context.Context, b backend.Backend, orgName string, defaults projectDefaults,
 	template cmdTemplates.ProjectTemplate, args newArgs, opts display.Options,
-) (*confirmedNew, error) {
+) (*setupAnswers, error) {
 	if !args.useGuidedFlow() {
 		return nil, nil
 	}
@@ -211,7 +151,7 @@ func confirmGuidedValues(
 		return nil, nil
 	}
 
-	c := &confirmedNew{name: defaults.name, description: defaults.description}
+	c := &setupAnswers{name: defaults.name, description: defaults.description, guided: true}
 
 	var err error
 	projectIsNew := shows.name && defaults.nameErr == nil
@@ -276,7 +216,7 @@ func confirmGuidedValues(
 
 // avoidExistingStack asks for another stack name when the default is already taken. The answer
 // can still go stale before creation, which createStackWithRetry handles.
-func (c *confirmedNew) avoidExistingStack(
+func (c *setupAnswers) avoidExistingStack(
 	ctx context.Context, b backend.Backend, args newArgs, opts display.Options,
 ) error {
 	org, stack := splitStackName(c.stackName)
@@ -338,71 +278,76 @@ func splitStackName(stackName string) (string, string) {
 
 // resolveConfigDefaults resolves defaults under the project name chosen so far, including any key
 // declared without a namespace.
-func (c *confirmedNew) resolveConfigDefaults(
+func (c *setupAnswers) resolveConfigDefaults(
 	template cmdTemplates.ProjectTemplate, args newArgs,
-) ([]templateConfigValue, error) {
+) (*askedConfig, error) {
 	projectName := tokens.PackageName(c.name)
 
-	var err error
-	if c.commandLineConfig, err = ParseConfigForProject(
-		projectName, args.configArray, args.configPath,
-	); err != nil {
+	commandLineConfig, err := ParseConfigForProject(projectName, args.configArray, args.configPath)
+	if err != nil {
 		return nil, err
 	}
-	return resolveTemplateConfig(projectName, template.Config, c.commandLineConfig, nil, nil)
+	values, err := resolveTemplateConfig(projectName, template.Config, commandLineConfig, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &askedConfig{values: values, commandLineConfig: commandLineConfig}, nil
 }
 
 // promptUnsetConfig asks only for unset keys, so accepting the confirmation leaves nothing to ask.
-func (c *confirmedNew) promptUnsetConfig(
+func (c *setupAnswers) promptUnsetConfig(
 	template cmdTemplates.ProjectTemplate, args newArgs, opts display.Options,
 ) error {
-	values, err := c.resolveConfigDefaults(template, args)
+	asked, err := c.resolveConfigDefaults(template, args)
 	if err != nil {
 		return err
 	}
-	if slices.ContainsFunc(values, templateConfigValue.unset) {
+	if slices.ContainsFunc(asked.values, templateConfigValue.unset) {
 		fmt.Fprintln(args.stdout)
 	}
-	if err = askTemplateConfig(values, args.prompt, args.yes, askUnset, opts); err != nil {
+	if err = askTemplateConfig(asked.values, args.prompt, args.yes, askUnset, opts); err != nil {
 		return err
 	}
-	c.config = values
+	c.config = asked
 	return nil
 }
 
 // repromptConfig re-asks every key: the project name may have changed, re-resolving keys declared
 // without a namespace.
-func (c *confirmedNew) repromptConfig(
+func (c *setupAnswers) repromptConfig(
 	template cmdTemplates.ProjectTemplate, args newArgs, opts display.Options,
 ) error {
-	prior := make(map[string]string, len(c.config))
-	for _, v := range c.config {
+	prior := make(map[string]string, len(c.config.values))
+	for _, v := range c.config.values {
 		if !v.fromFlag {
 			prior[v.templateKey] = v.value
 		}
 	}
-	values, err := c.resolveConfigDefaults(template, args)
+	asked, err := c.resolveConfigDefaults(template, args)
 	if err != nil {
 		return err
 	}
-	for i, v := range values {
+	for i, v := range asked.values {
 		if p, ok := prior[v.templateKey]; ok && p != "" && !v.fromFlag {
-			values[i].value = p
+			asked.values[i].value = p
 		}
 	}
-	if slices.ContainsFunc(values, func(v templateConfigValue) bool { return !v.fromFlag }) {
+	if slices.ContainsFunc(asked.values, func(v templateConfigValue) bool { return !v.fromFlag }) {
 		fmt.Fprintln(args.stdout)
 	}
-	if err = askTemplateConfig(values, args.prompt, args.yes, askAll, opts); err != nil {
+	if err = askTemplateConfig(asked.values, args.prompt, args.yes, askAll, opts); err != nil {
 		return err
 	}
-	c.config = values
+	c.config = asked
 	return nil
 }
 
-func (c *confirmedNew) configRows() []field {
-	rows := make([]field, 0, len(c.config))
-	for _, v := range c.config {
+func (c *setupAnswers) configRows() []field {
+	if c.config == nil {
+		return nil
+	}
+	rows := make([]field, 0, len(c.config.values))
+	for _, v := range c.config.values {
 		value := v.value
 		if v.secret {
 			value = "[secret]"
