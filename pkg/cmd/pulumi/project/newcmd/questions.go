@@ -90,6 +90,14 @@ func askSetupQuestions(
 			return nil, err
 		}
 	}
+	if createsStack {
+		if answers.config, err = answers.resolveConfigDefaults(template, args); err != nil {
+			return nil, err
+		}
+		if err = askTemplateConfig(answers.config.values, args.prompt, args.yes, askAll, opts); err != nil {
+			return nil, err
+		}
+	}
 	return answers, nil
 }
 
@@ -146,7 +154,16 @@ func (a *setupAnswers) saveConfig(
 	args newArgs, opts display.Options,
 ) (config.Map, error) {
 	if a.config != nil {
-		return saveTemplateConfig(ctx, sink, ssml, ws, proj, s, a.config.values, a.config.commandLineConfig, "")
+		saved, err := saveTemplateConfig(ctx, sink, ssml, ws, proj, s, a.config.values, a.config.commandLineConfig, "")
+		if err != nil {
+			return nil, err
+		}
+		// The confirmation already showed the config; otherwise report it as handleConfig does.
+		if !a.guided && len(saved) > 0 {
+			fmt.Fprintln(args.stdout, "Saved config")
+			fmt.Fprintln(args.stdout)
+		}
+		return saved, nil
 	}
 	return handleConfig(ctx, sink, ssml, ws, args.prompt, proj, s,
 		args.templateNameOrURL, template, args.configArray, args.yes, args.configPath, opts, "")
