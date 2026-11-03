@@ -33,6 +33,7 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/common/diag"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/diag/colors"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/config"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
 
 	pkgWorkspace "github.com/pulumi/pulumi/pkg/v3/workspace"
@@ -65,8 +66,8 @@ type askedConfig struct {
 // askSetupQuestions asks what `pulumi new` needs to know about the project. Nothing has been written
 // when it returns, so a cancelled question leaves nothing behind.
 func askSetupQuestions(
-	ctx context.Context, b backend.Backend, orgName string, template cmdTemplates.ProjectTemplate,
-	args newArgs, opts display.Options, cwd string,
+	ctx context.Context, b backend.Backend, orgName string, existing backend.Stack,
+	template cmdTemplates.ProjectTemplate, args newArgs, opts display.Options, cwd string,
 ) (*setupAnswers, error) {
 	defaults := resolveProjectDefaults(ctx, b, orgName, template, args, opts, cwd)
 	answers, err := confirmGuidedValues(ctx, b, orgName, defaults, template, args, opts)
@@ -80,7 +81,21 @@ func askSetupQuestions(
 	); err != nil {
 		return nil, err
 	}
+	createsStack := !args.generateOnly && existing == nil
+	if createsStack && args.stack == "" {
+		useProjectForStackNames(b, answers.name)
+		if answers.stackName, err = promptStackName(
+			args.stdout, b, args.prompt, defaultStackName, args.yes, opts, b.ValidateStackName,
+		); err != nil {
+			return nil, err
+		}
+	}
 	return answers, nil
+}
+
+// useProjectForStackNames lets b resolve stack names without a project before the project is saved.
+func useProjectForStackNames(b backend.Backend, projectName string) {
+	b.SetCurrentProject(&workspace.Project{Name: tokens.PackageName(projectName)})
 }
 
 // confirmedStack reports whether the guided confirmation showed the stack name.
