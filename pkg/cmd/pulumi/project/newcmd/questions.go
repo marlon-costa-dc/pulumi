@@ -17,12 +17,20 @@ package newcmd
 import (
 	"context"
 	"fmt"
+	"maps"
+	"strconv"
+
+	survey "github.com/AlecAivazis/survey/v2"
+	surveycore "github.com/AlecAivazis/survey/v2/core"
 
 	"github.com/pulumi/pulumi/pkg/v3/backend"
 	"github.com/pulumi/pulumi/pkg/v3/backend/display"
 	cmdStack "github.com/pulumi/pulumi/pkg/v3/cmd/pulumi/stack"
 	cmdTemplates "github.com/pulumi/pulumi/pkg/v3/cmd/pulumi/templates"
+	"github.com/pulumi/pulumi/pkg/v3/cmd/pulumi/ui"
+	"github.com/pulumi/pulumi/pkg/v3/resource/plugin"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/diag"
+	"github.com/pulumi/pulumi/sdk/v3/go/common/diag/colors"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/config"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/workspace"
 
@@ -123,4 +131,95 @@ func (a *setupAnswers) saveConfig(
 	}
 	return handleConfig(ctx, sink, ssml, ws, args.prompt, proj, s,
 		args.templateNameOrURL, template, args.configArray, args.yes, args.configPath, opts, "")
+}
+
+func promptRuntimeOptions(ctx *plugin.Context, language plugin.LanguageRuntime, info *workspace.ProjectRuntimeInfo,
+	main string, opts display.Options, yes, interactive bool, prompt promptForValueFunc,
+) (map[string]any, error) {
+	options := make(map[string]any, len(info.Options()))
+	maps.Copy(options, info.Options())
+
+	// Keep querying for prompts until there are no more.
+	for {
+		// Update the program info with the latest runtime options.
+		programInfo := plugin.NewProgramInfo(ctx.Root, ctx.Pwd, main, options)
+		prompts, err := language.RuntimeOptionsPrompts(ctx.Request(), programInfo)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get runtime options prompts: %w", err)
+		}
+
+		if len(prompts) == 0 {
+			break
+		}
+
+		surveycore.DisableColor = true
+		for _, optionPrompt := range prompts {
+			if yes {
+				if optionPrompt.Default == nil {
+					return nil, fmt.Errorf("must provide a runtime option for '%s' in non-interactive mode", optionPrompt.Key)
+				}
+				options[optionPrompt.Key] = optionPrompt.Default.Value()
+				continue
+			}
+
+			if len(optionPrompt.Choices) == 1 {
+				// We got exactly one choice, so use that as default value without prompting the user.
+				choice := optionPrompt.Choices[0]
+				options[optionPrompt.Key] = choice.Value()
+			} else if len(optionPrompt.Choices) > 0 {
+				// Pick one among the choices
+				choices := make([]string, 0, len(optionPrompt.Choices))
+				// Map choice display string to the actual value
+				choiceMap := make(map[string]any, len(optionPrompt.Choices))
+				for _, choice := range optionPrompt.Choices {
+					displayName := choice.DisplayName
+					if displayName == "" {
+						displayName = choice.String()
+					}
+					choices = append(choices, displayName)
+					choiceMap[displayName] = choice.Value()
+				}
+
+				var response string
+				message := opts.Color.Colorize(colors.SpecPrompt + "\r" + optionPrompt.Description + colors.Reset)
+				if err := survey.AskOne(&survey.Select{
+					Message: message,
+					Options: choices,
+				}, &response, ui.SurveyIcons(opts.Color), nil); err != nil {
+					return nil, err
+				}
+				options[optionPrompt.Key] = choiceMap[response]
+			} else {
+				// Free form input
+				val, err := prompt(yes, optionPrompt.Description, "", false, makePromptValidator(optionPrompt), opts)
+				if err != nil {
+					return nil, err
+				}
+				r, err := plugin.RuntimeOptionValueFromString(optionPrompt.PromptType, val)
+				if err != nil {
+					return nil, err
+				}
+				options[optionPrompt.Key] = r.Value()
+			}
+		}
+	}
+
+	return options, nil
+}
+
+func makePromptValidator(prompt plugin.RuntimeOptionPrompt) func(string) error {
+	return func(value string) error {
+		switch prompt.PromptType {
+		case plugin.PromptTypeInt32:
+			_, err := strconv.ParseInt(value, 10, 32)
+			if err != nil {
+				return fmt.Errorf("expected an integer value, got %q", value)
+			}
+		case plugin.PromptTypeString:
+			// No validation needed for strings.
+		default:
+			return fmt.Errorf("unexpected prompt type: %v", prompt.PromptType)
+		}
+		return nil
+	}
 }

@@ -21,14 +21,10 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
-	survey "github.com/AlecAivazis/survey/v2"
-	surveycore "github.com/AlecAivazis/survey/v2/core"
 	"github.com/spf13/cobra"
 
 	"github.com/pulumi/pulumi/pkg/v3/backend"
@@ -330,12 +326,8 @@ func runNew(ctx context.Context, args newArgs) (err error) {
 		})
 	}
 
-	for _, opt := range args.runtimeOptions {
-		parts := strings.Split(strings.TrimSpace(opt), "=")
-		if len(parts) != 2 {
-			return fmt.Errorf("invalid runtime option: %s", opt)
-		}
-		proj.Runtime.SetOption(parts[0], parts[1])
+	if err = setRuntimeOptionFlags(&proj.Runtime, args.runtimeOptions); err != nil {
+		return err
 	}
 
 	if err = pkgWorkspace.SaveProject(proj); err != nil {
@@ -371,37 +363,11 @@ func runNew(ctx context.Context, args newArgs) (err error) {
 		}
 	}
 
-	projinfo := &engine.Projinfo{Proj: proj, Root: root}
-	hostReg := cmdCmd.NewDefaultRegistry(
-		ctx, cmdBackend.DefaultLoginManager, pkgWorkspace.Instance, proj, cmdutil.Diag(), env.Global(),
-	)
-	pluginHost, err := pkghost.New(
-		context.WithoutCancel(ctx), cmdutil.Diag(), cmdutil.Diag(), nil, pkgWorkspace.EnsureLanguageInstalled,
-		schema.NewLoaderServerFromContext, convert.NewMapperServerFromContext,
-		packageworkspace.NewResolverServer(hostReg),
-	)
+	pluginHost, pluginCtx, entryPoint, err := newProjectPluginContext(ctx, ws, proj, root)
 	if err != nil {
 		return err
 	}
 	defer contract.IgnoreClose(pluginHost) // host is owned here, closed after the context
-	cloudCredentialEnv, err := cmdBackend.PluginCloudCredentialEnv(ctx, ws, cmdBackend.DefaultLoginManager, proj)
-	if err != nil {
-		return err
-	}
-	_, entryPoint, pluginCtx, err := engine.ProjectInfoContext(
-		ctx,
-		projinfo,
-		pluginHost,
-		cmdutil.Diag(),
-		cmdutil.Diag(),
-		false, /* disableProviderPreview */
-		nil,   /* tracingSpan */
-		nil,   /* config */
-		cloudCredentialEnv,
-	)
-	if err != nil {
-		return err
-	}
 	defer pluginCtx.Close()
 
 	// If we're creating an empty project we won't have a runtime name
@@ -504,6 +470,56 @@ func runNew(ctx context.Context, args newArgs) (err error) {
 		fmt.Fprintln(args.stdout, template.Quickstart)
 	}
 
+	return nil
+}
+
+// newProjectPluginContext starts a plugin host and context for proj. Close the context before the host.
+func newProjectPluginContext(
+	ctx context.Context, ws pkgWorkspace.Context, proj *workspace.Project, root string,
+) (plugin.Host, *plugin.Context, string, error) {
+	hostReg := cmdCmd.NewDefaultRegistry(
+		ctx, cmdBackend.DefaultLoginManager, pkgWorkspace.Instance, proj, cmdutil.Diag(), env.Global(),
+	)
+	pluginHost, err := pkghost.New(
+		context.WithoutCancel(ctx), cmdutil.Diag(), cmdutil.Diag(), nil, pkgWorkspace.EnsureLanguageInstalled,
+		schema.NewLoaderServerFromContext, convert.NewMapperServerFromContext,
+		packageworkspace.NewResolverServer(hostReg),
+	)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	cloudCredentialEnv, err := cmdBackend.PluginCloudCredentialEnv(ctx, ws, cmdBackend.DefaultLoginManager, proj)
+	if err != nil {
+		contract.IgnoreClose(pluginHost)
+		return nil, nil, "", err
+	}
+	_, entryPoint, pluginCtx, err := engine.ProjectInfoContext(
+		ctx,
+		&engine.Projinfo{Proj: proj, Root: root},
+		pluginHost,
+		cmdutil.Diag(),
+		cmdutil.Diag(),
+		false, /* disableProviderPreview */
+		nil,   /* tracingSpan */
+		nil,   /* config */
+		cloudCredentialEnv,
+	)
+	if err != nil {
+		contract.IgnoreClose(pluginHost)
+		return nil, nil, "", err
+	}
+	return pluginHost, pluginCtx, entryPoint, nil
+}
+
+// setRuntimeOptionFlags applies --runtime-options (key=value pairs) to runtime.
+func setRuntimeOptionFlags(runtime *workspace.ProjectRuntimeInfo, flags []string) error {
+	for _, opt := range flags {
+		parts := strings.Split(strings.TrimSpace(opt), "=")
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid runtime option: %s", opt)
+		}
+		runtime.SetOption(parts[0], parts[1])
+	}
 	return nil
 }
 
@@ -746,97 +762,6 @@ func validateProjectNameInternal(ctx context.Context, b backend.Backend,
 	}
 
 	return nil
-}
-
-func promptRuntimeOptions(ctx *plugin.Context, language plugin.LanguageRuntime, info *workspace.ProjectRuntimeInfo,
-	main string, opts display.Options, yes, interactive bool, prompt promptForValueFunc,
-) (map[string]any, error) {
-	options := make(map[string]any, len(info.Options()))
-	maps.Copy(options, info.Options())
-
-	// Keep querying for prompts until there are no more.
-	for {
-		// Update the program info with the latest runtime options.
-		programInfo := plugin.NewProgramInfo(ctx.Root, ctx.Pwd, main, options)
-		prompts, err := language.RuntimeOptionsPrompts(ctx.Request(), programInfo)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get runtime options prompts: %w", err)
-		}
-
-		if len(prompts) == 0 {
-			break
-		}
-
-		surveycore.DisableColor = true
-		for _, optionPrompt := range prompts {
-			if yes {
-				if optionPrompt.Default == nil {
-					return nil, fmt.Errorf("must provide a runtime option for '%s' in non-interactive mode", optionPrompt.Key)
-				}
-				options[optionPrompt.Key] = optionPrompt.Default.Value()
-				continue
-			}
-
-			if len(optionPrompt.Choices) == 1 {
-				// We got exactly one choice, so use that as default value without prompting the user.
-				choice := optionPrompt.Choices[0]
-				options[optionPrompt.Key] = choice.Value()
-			} else if len(optionPrompt.Choices) > 0 {
-				// Pick one among the choices
-				choices := make([]string, 0, len(optionPrompt.Choices))
-				// Map choice display string to the actual value
-				choiceMap := make(map[string]any, len(optionPrompt.Choices))
-				for _, choice := range optionPrompt.Choices {
-					displayName := choice.DisplayName
-					if displayName == "" {
-						displayName = choice.String()
-					}
-					choices = append(choices, displayName)
-					choiceMap[displayName] = choice.Value()
-				}
-
-				var response string
-				message := opts.Color.Colorize(colors.SpecPrompt + "\r" + optionPrompt.Description + colors.Reset)
-				if err := survey.AskOne(&survey.Select{
-					Message: message,
-					Options: choices,
-				}, &response, ui.SurveyIcons(opts.Color), nil); err != nil {
-					return nil, err
-				}
-				options[optionPrompt.Key] = choiceMap[response]
-			} else {
-				// Free form input
-				val, err := prompt(yes, optionPrompt.Description, "", false, makePromptValidator(optionPrompt), opts)
-				if err != nil {
-					return nil, err
-				}
-				r, err := plugin.RuntimeOptionValueFromString(optionPrompt.PromptType, val)
-				if err != nil {
-					return nil, err
-				}
-				options[optionPrompt.Key] = r.Value()
-			}
-		}
-	}
-
-	return options, nil
-}
-
-func makePromptValidator(prompt plugin.RuntimeOptionPrompt) func(string) error {
-	return func(value string) error {
-		switch prompt.PromptType {
-		case plugin.PromptTypeInt32:
-			_, err := strconv.ParseInt(value, 10, 32)
-			if err != nil {
-				return fmt.Errorf("expected an integer value, got %q", value)
-			}
-		case plugin.PromptTypeString:
-			// No validation needed for strings.
-		default:
-			return fmt.Errorf("unexpected prompt type: %v", prompt.PromptType)
-		}
-		return nil
-	}
 }
 
 // printNextSteps prints out a series of commands that the user needs to run before their stack is able to be updated.
