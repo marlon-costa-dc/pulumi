@@ -38,8 +38,6 @@ const (
 	confirmChange = "Change these values"
 )
 
-var errConfirmationInterrupted = errors.New("no project created; please use `pulumi new` to start again")
-
 func printPreamble(w io.Writer, opts display.Options) {
 	fmt.Fprintln(w, "This command will walk you through creating a new Pulumi project.")
 	fmt.Fprintln(w)
@@ -188,7 +186,7 @@ func confirmGuidedValues(
 
 	accepted, err := askConfirmation(args.stdout, opts, args.selectOne, rows, c.configRows())
 	if err != nil {
-		return nil, friendlyInterrupt(err, errConfirmationInterrupted)
+		return nil, err
 	}
 	if accepted {
 		return c, nil

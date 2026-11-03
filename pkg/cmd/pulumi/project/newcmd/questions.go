@@ -16,6 +16,7 @@ package newcmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"strconv"
@@ -36,6 +37,8 @@ import (
 
 	pkgWorkspace "github.com/pulumi/pulumi/pkg/v3/workspace"
 )
+
+var errNoProjectCreated = errors.New("no project created; please use `pulumi new` to start again")
 
 // setupAnswers is what `pulumi new` learned from its questions, through either the guided
 // confirmation or the sequential prompts.
@@ -59,7 +62,8 @@ type askedConfig struct {
 	commandLineConfig config.Map
 }
 
-// askSetupQuestions asks what `pulumi new` needs to know about the project.
+// askSetupQuestions asks what `pulumi new` needs to know about the project. Nothing has been written
+// when it returns, so a cancelled question leaves nothing behind.
 func askSetupQuestions(
 	ctx context.Context, b backend.Backend, orgName string, template cmdTemplates.ProjectTemplate,
 	args newArgs, opts display.Options, cwd string,
