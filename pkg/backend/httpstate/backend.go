@@ -2314,6 +2314,10 @@ func (b *cloudBackend) runEngineAction(
 		op.Opts.Engine.HostFactory = backend.DefaultHostFactory(b.GetReadOnlyCloudRegistry())
 	}
 
+	if notice := op.StackConfiguration.ManagedEnvironmentNotice; notice != "" {
+		engineEvents <- engine.NewEvent(engine.StdoutEventPayload{Message: notice, Color: op.Opts.Display.Color})
+	}
+
 	var plan *deploy.Plan
 	var changes sdkDisplay.ResourceChanges
 	var updateErr error
