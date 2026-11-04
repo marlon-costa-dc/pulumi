@@ -682,3 +682,28 @@ func TestUnwrapBucketOpenError(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateCloudBackendType(t *testing.T) {
+	t.Parallel()
+
+	for _, backendURL := range []string{
+		"azblob://bucket", "gs://bucket", "s3://bucket", "file://~",
+		"https://api.pulumi.com", "http://localhost", "postgres://host/database",
+		"oci://namespace/bucket/prefix",
+	} {
+		t.Run(backendURL, func(t *testing.T) {
+			t.Parallel()
+			require.NoError(t, validateCloudBackendType(backendURL))
+		})
+	}
+
+	for _, backendURL := range []string{"ftp://host", "ssh://host", "bucket/path", ""} {
+		t.Run("invalid/"+backendURL, func(t *testing.T) {
+			t.Parallel()
+			err := validateCloudBackendType(backendURL)
+			require.ErrorContains(t, err, "unknown backend cloudUrl format")
+			require.ErrorContains(t, err, "oci://")
+			require.ErrorContains(t, err, "https://")
+		})
+	}
+}

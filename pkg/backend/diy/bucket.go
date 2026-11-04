@@ -32,6 +32,7 @@ import (
 // Bucket is a wrapper around an underlying gocloud blob.Bucket.  It ensures that we pass all paths
 // to it normalized to forward-slash form like it requires.
 type Bucket interface {
+	As(target any) bool
 	Copy(ctx context.Context, dstKey, srcKey string, opts *blob.CopyOptions) (err error)
 	Delete(ctx context.Context, key string) (err error)
 	List(opts *blob.ListOptions) *blob.ListIterator
@@ -48,6 +49,8 @@ type Bucket interface {
 type wrappedBucket struct {
 	bucket *blob.Bucket
 }
+
+func (b *wrappedBucket) As(target any) bool { return b.bucket.As(target) }
 
 func retryOp(op func() error) error {
 	var err error

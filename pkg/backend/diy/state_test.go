@@ -74,6 +74,8 @@ func (b *cancelingWriteBucket) attemptedWrite() bool {
 	return b.attempted
 }
 
+func (s *spyBucket) As(target any) bool { return s.inner.As(target) }
+
 func (s *spyBucket) Exists(ctx context.Context, key string) (bool, error) {
 	s.mu.Lock()
 	s.existsCalls++
