@@ -1,0 +1,4 @@
+component: backend/diy
+kind: feat
+body: Add OCI Object Storage as a state backend using native OCI authentication
+time: 2026-11-04T20:08:50.596429304-03:00

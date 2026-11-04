@@ -22,6 +22,8 @@ import (
 	"strings"
 
 	"gocloud.dev/secrets"
+
+	"github.com/pulumi/pulumi/pkg/v3/util/ociutil"
 )
 
 const Scheme = "ocikms"
@@ -56,7 +58,7 @@ func (o *URLOpener) OpenKeeperURL(ctx context.Context, u *url.URL) (*secrets.Kee
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	provider, err := newGCConfigurationProvider(u)
+	provider, err := ociutil.ConfigurationProvider(u)
 	if err != nil {
 		return nil, err
 	}

@@ -45,6 +45,7 @@ import (
 	"github.com/pulumi/pulumi/pkg/v3/backend"
 	"github.com/pulumi/pulumi/pkg/v3/backend/backenderr"
 	"github.com/pulumi/pulumi/pkg/v3/backend/display"
+	"github.com/pulumi/pulumi/pkg/v3/backend/diy/ociblob"    // driver for oci://
 	_ "github.com/pulumi/pulumi/pkg/v3/backend/diy/postgres" // driver for postgres://
 	"github.com/pulumi/pulumi/pkg/v3/backend/diy/unauthenticatedregistry"
 	sdkDisplay "github.com/pulumi/pulumi/pkg/v3/display"
@@ -287,7 +288,7 @@ func newDIYBackend(
 			stateStoreNoun(originalURL), describeBackendURL(originalURL, u, err), err)
 	}
 
-	if !strings.HasPrefix(u, FilePathPrefix) {
+	if !strings.HasPrefix(u, FilePathPrefix) && p.Scheme != ociblob.Scheme {
 		bucketSubDir := strings.TrimLeft(p.Path, "/")
 		if bucketSubDir != "" {
 			if !strings.HasSuffix(bucketSubDir, "/") {
@@ -1491,10 +1492,19 @@ func (b *diyBackend) apply(
 	// Make sure to print a link to the stack's checkpoint before exiting.
 	if !op.Opts.Display.SuppressPermalink && opts.ShowLink &&
 		!op.Opts.Display.JSONDisplay && !op.Opts.Display.SummaryJSON {
-		// Note we get a real signed link for aws/azure/gcp links.  But no such option exists for
-		// file:// links so we manually create the link ourselves.
-		var link string
-		if strings.HasPrefix(b.url, FilePathPrefix) {
+		// OCI exposes its authenticated Console bucket page; AWS/Azure/GCP use
+		// signed checkpoint links, and file:// links are built locally.
+		var link, checkpointKey string
+		label := "Permalink"
+		var console ociblob.ConsoleURL
+		if b.bucket.As(&console) {
+			link, err = console.ConsoleURL()
+			if err != nil {
+				return plan, changes, fmt.Errorf("creating OCI Console URL: %w", err)
+			}
+			label = "State bucket (OCI Console)"
+			checkpointKey = console.ObjectKey(filepath.ToSlash(b.stackPath(ctx, diyStackRef)))
+		} else if strings.HasPrefix(b.url, FilePathPrefix) {
 			u, _ := url.Parse(b.url)
 			u.Path = filepath.ToSlash(path.Join(u.Path, b.stackPath(ctx, diyStackRef)))
 			link = u.String()
@@ -1517,8 +1527,11 @@ func (b *diyBackend) apply(
 
 		if link != "" {
 			fmt.Printf(op.Opts.Display.Color.Colorize(
-				colors.SpecHeadline+"Permalink: "+
-					colors.Underline+colors.BrightBlue+"%s"+colors.Reset+"\n"), link)
+				colors.SpecHeadline+"%s: "+
+					colors.Underline+colors.BrightBlue+"%s"+colors.Reset+"\n"), label, link)
+			if checkpointKey != "" {
+				fmt.Printf("Checkpoint key: %s\n", checkpointKey)
+			}
 		}
 	}
 

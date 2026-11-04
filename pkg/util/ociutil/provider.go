@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ocikms
+package ociutil
 
 import (
 	"errors"
@@ -24,7 +24,8 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/common/auth"
 )
 
-func newGCConfigurationProvider(u *url.URL) (common.ConfigurationProvider, error) {
+// ConfigurationProvider resolves one OCI identity for the selected executor.
+func ConfigurationProvider(u *url.URL) (common.ConfigurationProvider, error) {
 	switch os.Getenv("OCI_CLI_AUTH") {
 	case "instance_principal":
 		return auth.InstancePrincipalConfigurationProvider()

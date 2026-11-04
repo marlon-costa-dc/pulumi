@@ -20,12 +20,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spf13/cobra"
+	"gocloud.dev/blob"
 
 	survey "github.com/AlecAivazis/survey/v2"
 	surveycore "github.com/AlecAivazis/survey/v2/core"
@@ -84,6 +84,7 @@ func NewLoginCmd(ws pkgWorkspace.Context, lm backend.LoginManager, store env.Env
 			"    $ pulumi login gs://my-pulumi-state-bucket                 # Google Cloud Storage\n" +
 			"    $ pulumi login azblob://my-pulumi-state-bucket             # Azure Blob Storage\n" +
 			"    $ pulumi login postgres://user:password@host:5432/database # PostgreSQL\n" +
+			"    $ pulumi login oci://namespace/bucket/prefix              # OCI Object Storage\n" +
 			"\n" +
 			"`--local` is a shortcut for `file://~`, which stores state under `~/.pulumi`.\n",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -368,13 +369,14 @@ func unwrapBucketOpenError(err error, cloudURL string) error {
 
 func validateCloudBackendType(typ string) error {
 	kind, _, _ := strings.Cut(typ, ":")
-	supportedKinds := []string{"azblob", "gs", "s3", "file", "https", "http", "postgres"}
-	if slices.Contains(supportedKinds, kind) {
+	mux := blob.DefaultURLMux()
+	if mux.ValidBucketScheme(kind) || kind == "https" || kind == "http" {
 		return nil
 	}
-	return fmt.Errorf("unknown backend cloudUrl format '%s' (supported Url formats are: "+
-		"azblob://, gs://, s3://, file://, https://, http:// and postgres://)",
-		kind)
+	supportedKinds := append(mux.BucketSchemes(), "https", "http")
+	sort.Strings(supportedKinds)
+	return fmt.Errorf("unknown backend cloudUrl format '%s' (supported Url formats are: %s://)",
+		kind, strings.Join(supportedKinds, "://, "))
 }
 
 // chooseAccount will prompt the user to choose amongst the available accounts.

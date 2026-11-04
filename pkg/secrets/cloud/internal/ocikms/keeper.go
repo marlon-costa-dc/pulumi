@@ -19,7 +19,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -27,6 +26,8 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/keymanagement"
 	"gocloud.dev/gcerrors"
 	"gocloud.dev/secrets"
+
+	"github.com/pulumi/pulumi/pkg/v3/util/ociutil"
 )
 
 func OpenKeeper(
@@ -54,7 +55,7 @@ func OpenKeeper(
 	}
 	if configProvider == nil {
 		var err error
-		configProvider, err = newGCConfigurationProvider(nil)
+		configProvider, err = ociutil.ConfigurationProvider(nil)
 		if err != nil {
 			return nil, err
 		}
@@ -119,42 +120,11 @@ func (k *keeper) Encrypt(ctx context.Context, plaintext []byte) ([]byte, error) 
 }
 
 // ErrorAs implements driver.Keeper.
-func (*keeper) ErrorAs(err error, i any) bool {
-	if target, ok := i.(*common.ServiceError); ok && target != nil {
-		native, found := errors.AsType[interface {
-			error
-			common.ServiceError
-		}](err)
-		if found {
-			*target = native
-		}
-		return found
-	}
-	return false
+func (*keeper) ErrorAs(err error, target any) bool {
+	return ociutil.ErrorAs(err, target)
 }
 
 // ErrorCode implements driver.Keeper.
-func (k *keeper) ErrorCode(err error) gcerrors.ErrorCode {
-	if errors.Is(err, context.Canceled) {
-		return gcerrors.Canceled
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return gcerrors.DeadlineExceeded
-	}
-	var native common.ServiceError
-	if !k.ErrorAs(err, &native) {
-		return gcerrors.Unknown
-	}
-	switch native.GetHTTPStatusCode() {
-	case http.StatusBadRequest:
-		return gcerrors.InvalidArgument
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return gcerrors.PermissionDenied
-	case http.StatusNotFound:
-		return gcerrors.NotFound
-	case http.StatusTooManyRequests:
-		return gcerrors.ResourceExhausted
-	default:
-		return gcerrors.Unknown
-	}
+func (*keeper) ErrorCode(err error) gcerrors.ErrorCode {
+	return ociutil.ErrorCode(err)
 }
